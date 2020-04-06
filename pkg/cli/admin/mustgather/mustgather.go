@@ -21,10 +21,13 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/kubectl/pkg/cmd/logs"
@@ -116,6 +119,9 @@ func (o *MustGatherOptions) Complete(f kcmdutil.Factory, cmd *cobra.Command, arg
 	if o.Client, err = kubernetes.NewForConfig(o.Config); err != nil {
 		return err
 	}
+	if o.DynamicClient, err = dynamic.NewForConfig(o.Config); err != nil {
+		return err
+	}
 	if o.ImageClient, err = imagev1client.NewForConfig(o.Config); err != nil {
 		return err
 	}
@@ -203,6 +209,7 @@ type MustGatherOptions struct {
 
 	Config           *rest.Config
 	Client           kubernetes.Interface
+	DynamicClient    dynamic.Interface
 	ImageClient      imagev1client.ImageV1Interface
 	RESTClientGetter genericclioptions.RESTClientGetter
 
@@ -231,81 +238,53 @@ func (o *MustGatherOptions) Validate() error {
 
 // Run creates and runs a must-gather pod.d
 func (o *MustGatherOptions) Run() error {
-	var err error
+	var (
+		err  error
+		pods []*corev1.Pod
+		objs []runtime.Object
+	)
 
-	// create namespace ...
-	ns, err := o.Client.CoreV1().Namespaces().Create(context.TODO(), &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "openshift-must-gather-",
-			Labels: map[string]string{
-				"openshift.io/run-level": "0",
-			},
-			Annotations: map[string]string{
-				"oc.openshift.io/command":    "oc adm must-gather",
-				"openshift.io/node-selector": "",
-			},
-		},
-	}, metav1.CreateOptions{})
+	// check resume data file
+	resumeFile := path.Join(o.DestDir, ".resume")
+	pods, err = o.getResumeData(resumeFile)
 	if err != nil {
+		o.log("gather could not read previous execution data, resuming is not possible: %v", err)
 		return err
 	}
-	o.PrinterCreated.PrintObj(ns, o.LogOut)
-	if !o.Keep {
-		defer func() {
-			if err := o.Client.CoreV1().Namespaces().Delete(context.TODO(), ns.Name, metav1.DeleteOptions{}); err != nil {
-				fmt.Printf("%v\n", err)
-				return
-			}
-			o.PrinterDeleted.PrintObj(ns, o.LogOut)
-		}()
-	}
 
-	// ... cluster role binding ...
-	clusterRoleBinding, err := o.Client.RbacV1().ClusterRoleBindings().Create(context.TODO(), o.newClusterRoleBinding(ns.Name), metav1.CreateOptions{})
-	if err != nil {
-		return err
-	}
-	o.PrinterCreated.PrintObj(clusterRoleBinding, o.LogOut)
-	if !o.Keep {
-		defer func() {
-			if err := o.Client.RbacV1().ClusterRoleBindings().Delete(context.TODO(), clusterRoleBinding.Name, metav1.DeleteOptions{}); err != nil {
-				fmt.Printf("%v\n", err)
-				return
-			}
-			o.PrinterDeleted.PrintObj(clusterRoleBinding, o.LogOut)
-		}()
-	}
-
-	// ... and finally must-gather pod
-	var pods []*corev1.Pod
-	for _, image := range o.Images {
-		_, err := imagereference.Parse(image)
-		if err != nil {
-			o.log("unable to parse image reference %s: %v", image, err)
-			return err
+	// if not start a fresh
+	if len(pods) == 0 {
+		pods, objs, err = o.initialize()
+		for _, obj := range objs {
+			o.PrinterCreated.PrintObj(obj, o.LogOut)
 		}
-
-		pod, err := o.Client.CoreV1().Pods(ns.Name).Create(context.TODO(), o.newPod(o.NodeName, image), metav1.CreateOptions{})
-		if err != nil {
-			return err
+		for _, pod := range pods {
+			o.log("pod for plug-in image %s created", pod.Spec.Containers[0].Image)
 		}
-		o.log("pod for plug-in image %s created", image)
-		pods = append(pods, pod)
 	}
 
-	// log timestamps...
-	if err := os.MkdirAll(o.DestDir, os.ModePerm); err != nil {
+	// log timestamps and resume data
+	if err := os.MkdirAll(o.DestDir, 0775); err != nil {
 		return err
 	}
 	if err := o.logTimestamp(); err != nil {
 		return err
 	}
 	defer o.logTimestamp()
+	resume, err := os.OpenFile(resumeFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+	defer resume.Close()
 
 	var wg sync.WaitGroup
 	wg.Add(len(pods))
 	errCh := make(chan error, len(pods))
 	for _, pod := range pods {
+		if _, err := resume.WriteString(fmt.Sprintf("%s/%s\n", pod.Namespace, pod.Name)); err != nil {
+			o.log("gather did not log pod name, resuming will not be possible: %v", err)
+		}
+
 		go func(pod *corev1.Pod) {
 			defer wg.Done()
 
@@ -357,6 +336,18 @@ func (o *MustGatherOptions) Run() error {
 		errs = append(errs, err)
 	}
 
+	// cleaning
+	if len(errs) == 0 || !o.Keep {
+		os.Remove(resumeFile)
+		for _, obj := range objs {
+			if err := o.DynamicClient.Resource(schema.GroupVersionResource{}).Delete(context.TODO(), obj.Name?, metav1.DeleteOptions{}); err != nil {
+				fmt.Fprintf(o.ErrOut, "%v\n", err)
+				continue
+			}
+			o.PrinterDeleted.PrintObj(obj, o.LogOut)
+		}
+	}
+
 	return errors.NewAggregate(errs)
 }
 
@@ -378,6 +369,68 @@ func (o *MustGatherOptions) logTimestamp() error {
 	}
 	_, err = f.WriteString(fmt.Sprintf("%v\n", time.Now()))
 	return err
+}
+
+func (o *MustGatherOptions) getResumeData(filename string) ([]*corev1.Pod, error) {
+	file, err := os.Open(filename)
+	if err != nil && err != os.ErrNotExist {
+		return nil, err
+	}
+	defer file.Close()
+	var pods []*corev1.Pod
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.Split(scanner.Text(), "/")
+		if len(line) != 2 {
+			o.log("ignoring wrong pod name format: %v", line)
+			continue
+		}
+		pod, err := o.Client.CoreV1().Pods(line[0]).Get(context.TODO(), line[1], metav1.GetOptions{})
+		if err != nil {
+			o.log("ignoring pod %s/%s due to error: %v", line[0], line[1], err)
+			continue
+		}
+		pods = append(pods, pod)
+	}
+	return pods, nil
+}
+
+func (o *MustGatherOptions) initialize() ([]*corev1.Pod, []runtime.Object, error) {
+	var pods []*corev1.Pod
+	resources := []runtime.Object{}
+
+	ns, err := o.Client.CoreV1().Namespaces().Create(context.TODO(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "openshift-must-gather-",
+			Labels: map[string]string{
+				"openshift.io/run-level": "0",
+			},
+			Annotations: map[string]string{
+				"oc.openshift.io/command":    "oc adm must-gather",
+				"openshift.io/node-selector": "",
+			},
+		},
+	}, metav1.CreateOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	resources = append(resources, ns)
+
+	clusterRoleBinding, err := o.Client.RbacV1().ClusterRoleBindings().Create(context.TODO(), o.newClusterRoleBinding(ns.Name), metav1.CreateOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	resources = append(resources, clusterRoleBinding)
+
+	for _, image := range o.Images {
+		pod, err := o.Client.CoreV1().Pods(ns.Name).Create(context.TODO(), o.newPod(o.NodeName, image), metav1.CreateOptions{})
+		if err != nil {
+			return nil, nil, err
+		}
+		pods = append(pods, pod)
+	}
+
+	return pods, resources, nil
 }
 
 func (o *MustGatherOptions) copyFilesFromPod(pod *corev1.Pod) error {
