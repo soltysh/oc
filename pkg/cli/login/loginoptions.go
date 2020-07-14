@@ -395,6 +395,7 @@ func (o *LoginOptions) SaveConfig() (bool, error) {
 		return false, err
 	}
 
+	kclientcmd.UseModifyConfigLock = false
 	if err := kclientcmd.ModifyConfig(o.PathOptions, *configToWrite, true); err != nil {
 		if !os.IsPermission(err) {
 			return false, err

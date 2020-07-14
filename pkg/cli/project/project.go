@@ -132,6 +132,7 @@ func (o *ProjectOptions) Complete(f genericclioptions.RESTClientGetter, cmd *cob
 		// prevent local context-switching from failing due to an unreachable
 		// server or an unfetchable KubeControlPlaneRESTConfig.
 		o.Config.CurrentContext = o.ProjectName
+		kclientcmd.UseModifyConfigLock = false
 		if err := kclientcmd.ModifyConfig(o.PathOptions, o.Config, true); err != nil {
 			return err
 		}
@@ -285,6 +286,7 @@ func (o ProjectOptions) Run() error {
 		contextInUse = merged.CurrentContext
 	}
 
+	kclientcmd.UseModifyConfigLock = false
 	if err := kclientcmd.ModifyConfig(o.PathOptions, config, true); err != nil {
 		return err
 	}
