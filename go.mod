@@ -96,7 +96,6 @@ replace (
 	k8s.io/apimachinery => github.com/openshift/kubernetes-apimachinery oc-4.6-kubernetes-1.19-rc.1
 	k8s.io/apiserver => k8s.io/apiserver v0.19.0-rc.1
 	k8s.io/cli-runtime => github.com/openshift/kubernetes-cli-runtime oc-4.6-kubernetes-1.19-rc.1
-	k8s.io/client-go => github.com/openshift/kubernetes-client-go oc-4.6-kubernetes-1.19-rc.1
 	k8s.io/cloud-provider => k8s.io/cloud-provider v0.19.0-rc.1
 	k8s.io/cluster-bootstrap => k8s.io/cluster-bootstrap v0.19.0-rc.1
 	k8s.io/code-generator => k8s.io/code-generator v0.19.0-rc.1
