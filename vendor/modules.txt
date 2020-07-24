@@ -528,6 +528,8 @@ github.com/peterbourgon/diskv
 github.com/pkg/errors
 # github.com/pkg/profile v1.3.0
 github.com/pkg/profile
+# github.com/pmezard/go-difflib v1.0.0
+github.com/pmezard/go-difflib/difflib
 # github.com/prometheus/client_golang v1.7.1
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/prometheus/internal
@@ -550,6 +552,8 @@ github.com/sirupsen/logrus
 github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.5
 github.com/spf13/pflag
+# github.com/stretchr/testify v1.5.1
+github.com/stretchr/testify/assert
 # go.etcd.io/etcd v0.5.0-alpha.5.0.20200520232829-54ba9589114f
 go.etcd.io/etcd/auth/authpb
 go.etcd.io/etcd/clientv3

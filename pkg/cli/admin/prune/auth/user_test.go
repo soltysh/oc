@@ -2,10 +2,10 @@ package auth
 
 import (
 	"io/ioutil"
-	"reflect"
 	"testing"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/stretchr/testify/assert"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -241,7 +241,7 @@ func TestUserReaper(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 			}
 
-			if !reflect.DeepEqual(test.expected, actual) {
+			if !assert.ElementsMatch(t, test.expected, actual) {
 				for i, x := range test.expected {
 					t.Logf("Expected %d: %s", i, spew.Sprint(x))
 				}
