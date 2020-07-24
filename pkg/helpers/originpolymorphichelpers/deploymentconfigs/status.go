@@ -6,7 +6,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/kubectl/pkg/polymorphichelpers"
-	"k8s.io/kubectl/pkg/scheme"
 
 	appsv1 "github.com/openshift/api/apps/v1"
 	"github.com/openshift/library-go/pkg/apps/appsutil"
@@ -26,7 +25,7 @@ var _ polymorphichelpers.StatusViewer = &DeploymentConfigStatusViewer{}
 // Status returns a message describing deployment status, and a bool value indicating if the status is considered done
 func (s *DeploymentConfigStatusViewer) Status(obj runtime.Unstructured, desiredRevision int64) (string, bool, error) {
 	config := &appsv1.DeploymentConfig{}
-	err := scheme.Scheme.Convert(obj, config, nil)
+	err := runtime.DefaultUnstructuredConverter.FromUnstructured(obj.UnstructuredContent(), config)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to convert %T to %T: %v", obj, config, err)
 	}

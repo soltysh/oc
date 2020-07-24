@@ -25,7 +25,6 @@ import (
 	autoscalingv1client "k8s.io/client-go/kubernetes/typed/autoscaling/v1"
 	batchv1client "k8s.io/client-go/kubernetes/typed/batch/v1"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/kubectl/pkg/scheme"
 
 	"github.com/openshift/api/annotations"
 	appsv1 "github.com/openshift/api/apps/v1"
@@ -1981,11 +1980,7 @@ func (l *dcLoader) Load() error {
 
 func (l *dcLoader) AddToGraph(g osgraph.Graph) error {
 	for i := range l.items {
-		internalConfig := &appsv1.DeploymentConfig{}
-		if err := scheme.Scheme.Convert(&l.items[i], internalConfig, nil); err != nil {
-			return err
-		}
-		appsgraph.EnsureDeploymentConfigNode(g, internalConfig)
+		appsgraph.EnsureDeploymentConfigNode(g, &l.items[i])
 	}
 
 	return nil
