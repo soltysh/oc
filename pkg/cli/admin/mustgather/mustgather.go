@@ -289,9 +289,16 @@ func (o *MustGatherOptions) Run() error {
 			o.PrinterDeleted.PrintObj(ns, o.LogOut)
 		}()
 	}
-
+	// ... service account ...
+	//use custom SA to not to rely on kube-controller-manager's default
+	serviceAccount, err := o.Client.CoreV1().ServiceAccounts(ns.Name).Create(context.TODO(),
+		&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{GenerateName: "openshift-must-gather-"}},
+		metav1.CreateOptions{})
+	if err != nil {
+		return err
+	}
 	// ... cluster role binding ...
-	clusterRoleBinding, err := o.Client.RbacV1().ClusterRoleBindings().Create(context.TODO(), o.newClusterRoleBinding(ns.Name), metav1.CreateOptions{})
+	clusterRoleBinding, err := o.Client.RbacV1().ClusterRoleBindings().Create(context.TODO(), o.newClusterRoleBinding(ns.Name, serviceAccount.Name), metav1.CreateOptions{})
 	if err != nil {
 		return err
 	}
@@ -545,7 +552,7 @@ func (o *MustGatherOptions) waitForGatherContainerRunning(pod *corev1.Pod) error
 	})
 }
 
-func (o *MustGatherOptions) newClusterRoleBinding(ns string) *rbacv1.ClusterRoleBinding {
+func (o *MustGatherOptions) newClusterRoleBinding(ns, sa string) *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "must-gather-",
@@ -561,7 +568,7 @@ func (o *MustGatherOptions) newClusterRoleBinding(ns string) *rbacv1.ClusterRole
 		Subjects: []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
-				Name:      "default",
+				Name:      sa,
 				Namespace: ns,
 			},
 		},
