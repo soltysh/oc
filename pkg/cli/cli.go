@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/oc/pkg/cli/experimental/dockergc"
 	"github.com/openshift/oc/pkg/cli/expose"
 	"github.com/openshift/oc/pkg/cli/extract"
+	"github.com/openshift/oc/pkg/cli/get"
 	"github.com/openshift/oc/pkg/cli/idle"
 	"github.com/openshift/oc/pkg/cli/image"
 	"github.com/openshift/oc/pkg/cli/importimage"
@@ -178,7 +179,7 @@ func NewOcCommand(in io.Reader, out, errout io.Writer) *cobra.Command {
 			Commands: []*cobra.Command{
 				kubectlwrappers.NewCmdCreate(f, ioStreams),
 				kubectlwrappers.NewCmdApply(f, ioStreams),
-				kubectlwrappers.NewCmdGet(f, ioStreams),
+				get.NewCmdGet(f, ioStreams),
 				kubectlwrappers.NewCmdDescribe(f, ioStreams),
 				kubectlwrappers.NewCmdEdit(f, ioStreams),
 				set.NewCmdSet(f, ioStreams),
