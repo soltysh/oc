@@ -414,6 +414,7 @@ func transportWithSystemRoots(issuer string, clientConfig *restclient.Config) (h
 	// perform the retrieval with insecure transport, otherwise oauth-server
 	// logs remote tls error which is confusing during troubleshooting
 	client := http.Client{
+		Timeout: clientConfig.Timeout,
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			TLSClientConfig: &tls.Config{
@@ -423,13 +424,16 @@ func transportWithSystemRoots(issuer string, clientConfig *restclient.Config) (h
 			},
 		},
 	}
+	klog.Infof("invoking HEAD on %s", issuer)
 	resp, err := client.Head(issuer)
 	if err != nil {
 		return nil, err
 	}
 	resp.Body.Close()
 
+	klog.Infof("verify server chain")
 	_, err = verifyServerCertChain(issuerURL.Hostname(), resp.TLS.PeerCertificates)
+	klog.Infof("done verifying chain")
 	switch err.(type) {
 	case nil:
 		// copy the config so we can freely mutate it
@@ -475,12 +479,15 @@ func verifyServerCertChain(dnsName string, chain []*x509.Certificate) ([][]*x509
 	if len(chain) == 0 {
 		return nil, fmt.Errorf("the server presented an empty certificate chain")
 	}
+	klog.Infof("creating CertPool")
 	intermediates := x509.NewCertPool()
 
+	klog.Infof("adding internmediates")
 	for _, c := range chain[1:] {
 		intermediates.AddCert(c)
 	}
 
+	klog.Infof("verify chain")
 	return chain[0].Verify(x509.VerifyOptions{
 		Intermediates: intermediates,
 		DNSName:       dnsName,
